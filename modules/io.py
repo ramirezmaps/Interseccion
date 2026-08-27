@@ -42,6 +42,15 @@ def extract_zip_shapefile(zip_bytes_or_file: Any, target_dir: str) -> str:
         
     return str(primary_shp)
 
+def extract_zip_analysis_folder(zip_bytes_or_file: Any, target_dir: str) -> str:
+    """
+    Extrae un archivo ZIP que contiene la estructura completa de subcarpetas y archivos Shapefile.
+    Retorna la ruta al directorio extraído para su escaneo recursivo.
+    """
+    with zipfile.ZipFile(zip_bytes_or_file, 'r') as zip_ref:
+        zip_ref.extractall(target_dir)
+    return target_dir
+
 def read_shapefile(shp_path: str) -> gpd.GeoDataFrame:
     """Lee un archivo Shapefile usando GeoPandas (con motor preferente Pyogrio o Fiona)."""
     try:

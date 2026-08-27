@@ -13,6 +13,7 @@ from streamlit_folium import st_folium
 # Importación de módulos locales
 from modules.io import (
     extract_zip_shapefile,
+    extract_zip_analysis_folder,
     read_shapefile,
     scan_directory_for_shapefiles,
     export_to_excel,
@@ -124,13 +125,29 @@ def main():
         help="El archivo comprimido debe incluir al menos los archivos .shp, .shx, .dbf y .prj."
     )
 
-    # 2. Ruta Carpeta Raíz de Análisis
-    st.sidebar.subheader("2. Carpeta de Análisis")
-    root_folder_input = st.sidebar.text_input(
-        "Ruta a la carpeta principal en disco:",
-        value=os.getcwd(),
-        help="Ruta completa de la carpeta que contiene los subdirectorios con archivos .shp a analizar."
+    # 2. Carpeta o Archivo de Análisis
+    st.sidebar.subheader("2. Carpeta / Archivos de Análisis")
+    analysis_input_mode = st.sidebar.radio(
+        "Origen de archivos a analizar:",
+        options=["📦 Cargar .ZIP con subcarpetas y SHPs (Recomendado Nube)", "💻 Ruta de carpeta local / servidor"],
+        help="En Streamlit Cloud en la nube, utilice la opción de cargar un archivo .ZIP comprimido con las subcarpetas y Shapefiles."
     )
+
+    uploaded_analysis_zip = None
+    root_folder_input = None
+
+    if "📦 Cargar .ZIP" in analysis_input_mode:
+        uploaded_analysis_zip = st.sidebar.file_uploader(
+            "Cargar .ZIP con las subcarpetas y Shapefiles a analizar",
+            type=["zip"],
+            help="Suba un archivo comprimido que contenga las subcarpetas con los archivos Shapefile (.shp, .shx, .dbf, .prj)."
+        )
+    else:
+        root_folder_input = st.sidebar.text_input(
+            "Ruta a la carpeta principal en disco:",
+            value=os.getcwd(),
+            help="Ruta completa de la carpeta local que contiene los subdirectorios con archivos .shp a analizar."
+        )
 
     # 3. Parámetro de Buffer
     st.sidebar.subheader("3. Parámetros Espaciales")
@@ -157,12 +174,17 @@ def main():
     # =========================================================================
     if execute_button:
         if not uploaded_zip:
-            st.error("❌ Debe cargar un archivo ZIP con el Shapefile de referencia.")
+            st.error("❌ Debe cargar un archivo ZIP con el Shapefile de referencia en el punto 1.")
             return
 
-        if not os.path.exists(root_folder_input) or not os.path.isdir(root_folder_input):
-            st.error(f"❌ La ruta especificada '{root_folder_input}' no existe o no es un directorio válido.")
+        if "📦 Cargar .ZIP" in analysis_input_mode and not uploaded_analysis_zip:
+            st.error("❌ Debe cargar un archivo ZIP con las subcarpetas y Shapefiles de análisis en el punto 2.")
             return
+
+        if "💻 Ruta de carpeta" in analysis_input_mode:
+            if not root_folder_input or not os.path.exists(root_folder_input) or not os.path.isdir(root_folder_input):
+                st.error(f"❌ La ruta especificada '{root_folder_input}' no existe o no es un directorio válido en el servidor.")
+                return
 
         with st.spinner("⏳ Preparando y procesando capas geográficas..."):
             start_time = time.time()
@@ -198,9 +220,17 @@ def main():
                     buffer_dissolved, gdf_buffer_proj = create_buffer_layer(gdf_ref_proj, buffer_meters)
                     strtree_ref = build_spatial_index(gdf_ref_proj)
 
-                    # 4. Escanear carpeta de análisis recursivamente
-                    status_text.text("🔍 Escaneando archivos Shapefile en subcarpetas...")
-                    scanned_shps = scan_directory_for_shapefiles(root_folder_input)
+                    # 4. Determinar ruta raíz de análisis (desde ZIP o carpeta local)
+                    status_text.text("🔍 Preparando y escaneando archivos Shapefile en subcarpetas...")
+                    if uploaded_analysis_zip:
+                        temp_analysis_dir = os.path.join(temp_dir, "analysis_root")
+                        os.makedirs(temp_analysis_dir, exist_ok=True)
+                        extract_zip_analysis_folder(uploaded_analysis_zip, temp_analysis_dir)
+                        actual_root_path = temp_analysis_dir
+                    else:
+                        actual_root_path = root_folder_input
+
+                    scanned_shps = scan_directory_for_shapefiles(actual_root_path)
                     st.session_state["scanned_shps"] = scanned_shps
 
                     if not scanned_shps:
