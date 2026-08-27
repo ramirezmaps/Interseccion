@@ -106,28 +106,41 @@ def generate_summary_reports(
     return df_results, df_summary, df_non_intersected, global_kpis
 
 def classify_distance_ranges(
-    df_non_intersected: pd.DataFrame,
+    df_results: pd.DataFrame,
     custom_bins: Optional[List[float]] = None,
     custom_labels: Optional[List[str]] = None
 ) -> pd.DataFrame:
-    """Clasifica los elementos no intersectados en rangos de distancia configurables."""
-    if df_non_intersected is None or df_non_intersected.empty:
+    """Clasifica todas las entidades analizadas en rangos de distancia (incluyendo 0 m - Intersecta)."""
+    if df_results is None or df_results.empty:
         return pd.DataFrame(columns=["rango_distancia", "cantidad", "porcentaje"])
         
-    bins = custom_bins or DEFAULT_DISTANCE_BINS
-    labels = custom_labels or DEFAULT_BIN_LABELS
+    labels = custom_labels or ["0 m (Intersecta)", "0.1 - 50 m", "50 - 100 m", "100 - 250 m", "250 - 500 m", "> 500 m"]
     
-    df_copy = df_non_intersected.copy()
-    df_copy["rango_distancia"] = pd.cut(
-        df_copy["distancia_m"],
-        bins=bins,
-        labels=labels,
-        include_lowest=True
-    )
+    # Conteo especial para Intersectan (0.0 m)
+    count_int = int((df_results["distancia_m"] == 0.0).sum())
     
-    counts = df_copy["rango_distancia"].value_counts().reindex(labels, fill_value=0).reset_index()
-    counts.columns = ["rango_distancia", "cantidad"]
-    total = counts["cantidad"].sum()
-    counts["porcentaje"] = ((counts["cantidad"] / total) * 100.0).round(1) if total > 0 else 0.0
+    # Filtrar no intersectados para rangos > 0
+    df_non = df_results[df_results["distancia_m"] > 0.0].copy()
     
-    return counts
+    bins_non = [0.0, 50.0, 100.0, 250.0, 500.0, np.inf]
+    labels_non = ["0.1 - 50 m", "50 - 100 m", "100 - 250 m", "250 - 500 m", "> 500 m"]
+    
+    if not df_non.empty:
+        df_non["rango_distancia"] = pd.cut(
+            df_non["distancia_m"],
+            bins=bins_non,
+            labels=labels_non,
+            include_lowest=False
+        )
+        counts_non = df_non["rango_distancia"].value_counts().reindex(labels_non, fill_value=0).to_dict()
+    else:
+        counts_non = {lbl: 0 for lbl in labels_non}
+        
+    all_counts = {"0 m (Intersecta)": count_int}
+    all_counts.update(counts_non)
+    
+    df_out = pd.DataFrame(list(all_counts.items()), columns=["rango_distancia", "cantidad"])
+    total = df_out["cantidad"].sum()
+    df_out["porcentaje"] = ((df_out["cantidad"] / total) * 100.0).round(1) if total > 0 else 0.0
+    
+    return df_out

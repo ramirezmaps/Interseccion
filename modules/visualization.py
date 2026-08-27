@@ -170,7 +170,7 @@ def create_plotly_charts(
     df_non_intersected: pd.DataFrame,
     df_ranges: pd.DataFrame
 ) -> Dict[str, go.Figure]:
-    """Genera gráficos interactivos con Plotly para análisis de datos."""
+    """Genera gráficos interactivos con Plotly reflejando siempre la intersección y proximidad."""
     charts = {}
 
     # Gráfico 1: Dona Intersectados vs No Intersectados
@@ -182,25 +182,28 @@ def create_plotly_charts(
             state_counts,
             names="Estado",
             values="Cantidad",
-            hole=0.4,
-            title="Distribución Total de Entidades Analyzadas",
+            hole=0.45,
+            title="Proporción Total: Intersectan vs No Intersectan",
             color="Estado",
             color_discrete_map={"INTERSECTA": "#2ca02c", "NO INTERSECTA": "#d62728"}
         )
-        fig1.update_traces(textposition='inside', textinfo='percent+label')
+        fig1.update_traces(textposition='inside', textinfo='percent+value+label', hovertemplate='%{label}: %{value} entidades (%{percent})')
+        fig1.update_layout(showlegend=True)
         charts["fig_donut"] = fig1
 
-    # Gráfico 2: Histograma de distancias (No Intersectados)
-    if not df_non_intersected.empty:
+    # Gráfico 2: Histograma de distancias (Incluyendo 0 m de Intersectados)
+    if not df_results.empty:
         fig2 = px.histogram(
-            df_non_intersected,
+            df_results,
             x="distancia_m",
+            color="estado",
             nbins=30,
-            title="Distribución de Distancias al Elemento de Referencia (Metros)",
-            labels={"distancia_m": "Distancia (m)"},
-            color_discrete_sequence=["#9467bd"]
+            title="Distribución Global de Distancias en Metros",
+            labels={"distancia_m": "Distancia al Buffer (m)", "estado": "Estado"},
+            color_discrete_map={"INTERSECTA": "#2ca02c", "NO INTERSECTA": "#d62728"},
+            barmode="overlay"
         )
-        fig2.update_layout(xaxis_title="Distancia (m)", yaxis_title="Frecuencia (Cantidad de Entidades)")
+        fig2.update_layout(xaxis_title="Distancia (m)", yaxis_title="Cantidad de Entidades")
         charts["fig_hist"] = fig2
 
     # Gráfico 3: Entidades por Archivo (Intersectadas vs No Intersectadas)
@@ -211,32 +214,42 @@ def create_plotly_charts(
             var_name="Estado",
             value_name="Cantidad"
         )
-        df_melt["Estado"] = df_melt["Estado"].replace({"intersectan": "Intersecta", "no_intersectan": "No Intersecta"})
+        df_melt["Estado"] = df_melt["Estado"].replace({"intersectan": "INTERSECTA", "no_intersectan": "NO INTERSECTA"})
         
         fig3 = px.bar(
             df_melt,
             x="archivo",
             y="Cantidad",
             color="Estado",
-            title="Entidades por Archivo de Análisis",
+            text="Cantidad",
+            title="Entidades por Archivo Shapefile (Intersectadas vs No Intersectadas)",
             barmode="stack",
-            color_discrete_map={"Intersecta": "#2ca02c", "No Intersecta": "#d62728"}
+            color_discrete_map={"INTERSECTA": "#2ca02c", "NO INTERSECTA": "#d62728"}
         )
         fig3.update_layout(xaxis_title="Archivo Shapefile", yaxis_title="Cantidad de Entidades")
         charts["fig_bar_files"] = fig3
 
-    # Gráfico 4: Cantidad por Rango de Distancia
+    # Gráfico 4: Cantidad por Rango de Distancia (Incluye 0 m Intersecta)
     if not df_ranges.empty:
+        color_map = {
+            "0 m (Intersecta)": "#2ca02c",
+            "0.1 - 50 m": "#ffbb78",
+            "50 - 100 m": "#ff7f0e",
+            "100 - 250 m": "#e377c2",
+            "250 - 500 m": "#d62728",
+            "> 500 m": "#8c564b"
+        }
+        
         fig4 = px.bar(
             df_ranges,
             x="rango_distancia",
             y="cantidad",
             text="cantidad",
-            title="Clasificación de Elementos por Rango de Distancia",
+            title="Clasificación General por Rangos de Distancia",
             color="rango_distancia",
-            color_discrete_sequence=px.colors.sequential.OrRd[::-1]
+            color_discrete_map=color_map
         )
-        fig4.update_layout(xaxis_title="Rango de Distancia", yaxis_title="Cantidad de Entidades")
+        fig4.update_layout(xaxis_title="Rango de Distancia", yaxis_title="Cantidad de Entidades", showlegend=False)
         charts["fig_ranges"] = fig4
 
     return charts
