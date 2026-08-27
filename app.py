@@ -325,6 +325,8 @@ def main():
                     st.session_state["excel_bytes"] = excel_bytes
                     st.session_state["gpkg_bytes"] = gpkg_bytes
                     st.session_state["crs_desc"] = crs_desc
+                    st.session_state["map_folium"] = None
+                    st.session_state["charts"] = None
 
                     elapsed = round(time.time() - start_time, 2)
                     status_text.success(f"✅ ¡Análisis completado exitosamente en {elapsed} segundos!")
@@ -389,14 +391,18 @@ def main():
         st.subheader("Mapa Interactivo Espacial")
         st.markdown("Visualización con capas independientes: **Referencia (Azul)**, **Buffer (Naranja)**, **Intersectados (Verde)**, **No Intersectados (Rojo)** y **Conectores de Distancia (Púrpura)**.")
         
-        map_folium = create_folium_map(
-            st.session_state["gdf_ref_proj"],
-            st.session_state["gdf_buffer_proj"],
-            st.session_state["gdf_int_proj"],
-            st.session_state["gdf_nint_proj"],
-            st.session_state["gdf_lines_proj"]
-        )
-        st_folium(map_folium, width="100%", height=600)
+        if st.session_state.get("map_folium") is None:
+            with st.spinner("🗺️ Renderizando mapa espacial..."):
+                st.session_state["map_folium"] = create_folium_map(
+                    st.session_state["gdf_ref_proj"],
+                    st.session_state["gdf_buffer_proj"],
+                    st.session_state["gdf_int_proj"],
+                    st.session_state["gdf_nint_proj"],
+                    st.session_state["gdf_lines_proj"]
+                )
+        
+        if st.session_state.get("map_folium") is not None:
+            st_folium(st.session_state["map_folium"], width="100%", height=600, returned_objects=[])
 
     # -------------------------------------------------------------------------
     # TAB 3: RESULTADOS CONSOLIDADOS
@@ -429,7 +435,10 @@ def main():
     # -------------------------------------------------------------------------
     with tab_charts:
         st.subheader("Análisis Gráfico y Esquema de Distancias")
-        charts = create_plotly_charts(df_results, df_summary, df_non_intersected, df_ranges)
+        if st.session_state.get("charts") is None:
+            st.session_state["charts"] = create_plotly_charts(df_results, df_summary, df_non_intersected, df_ranges)
+            
+        charts = st.session_state["charts"]
         
         c1, c2 = st.columns(2)
         with c1:

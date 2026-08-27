@@ -19,21 +19,34 @@ def create_folium_map(
     """
     Crea un mapa interactivo de Folium con capas independientes, popups y control de capas.
     """
-    # Helper para eliminar columnas no serializables en JSON para Folium
-    def _clean_gdf(df: Optional[gpd.GeoDataFrame]) -> Optional[gpd.GeoDataFrame]:
+    # Helper para eliminar columnas no serializables en JSON y optimizar payload de Folium
+    def _clean_gdf(df: Optional[gpd.GeoDataFrame], max_features: int = 3000) -> Optional[gpd.GeoDataFrame]:
         if df is None or len(df) == 0:
             return None
         df_c = df.copy()
         if "linea_conexion" in df_c.columns:
             df_c = df_c.drop(columns=["linea_conexion"])
-        return df_c.to_crs("EPSG:4326")
+        
+        # Limitar número de entidades para evitar saturación de memoria en navegador/servidor
+        if len(df_c) > max_features:
+            df_c = df_c.iloc[:max_features]
+            
+        df_4326 = df_c.to_crs("EPSG:4326")
+        
+        # Simplificación de geometrías complejas para renderizado ágil en la web
+        try:
+            df_4326["geometry"] = df_4326.geometry.simplify(0.00005, preserve_topology=True)
+        except Exception:
+            pass
+            
+        return df_4326
 
     # 1. Reproyectar a WGS84 (EPSG:4326) para Folium
-    gdf_ref_4326 = _clean_gdf(gdf_ref)
-    gdf_buf_4326 = _clean_gdf(gdf_buffer)
-    gdf_int_4326 = _clean_gdf(gdf_intersected)
-    gdf_nint_4326 = _clean_gdf(gdf_non_intersected)
-    gdf_lines_4326 = _clean_gdf(gdf_lines)
+    gdf_ref_4326 = _clean_gdf(gdf_ref, max_features=1000)
+    gdf_buf_4326 = _clean_gdf(gdf_buffer, max_features=500)
+    gdf_int_4326 = _clean_gdf(gdf_intersected, max_features=3000)
+    gdf_nint_4326 = _clean_gdf(gdf_non_intersected, max_features=3000)
+    gdf_lines_4326 = _clean_gdf(gdf_lines, max_features=3000)
 
     # Calcular centro del mapa
     if gdf_buf_4326 is not None:
