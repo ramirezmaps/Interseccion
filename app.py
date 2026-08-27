@@ -4,6 +4,7 @@ Aplicación GIS Profesional en Streamlit para Análisis Espacial de Intersecció
 import os
 import tempfile
 import time
+import gc
 from pathlib import Path
 import streamlit as st
 import geopandas as gpd
@@ -309,24 +310,33 @@ def main():
                     excel_bytes = export_to_excel(df_summary, df_results, gdf_int_proj, gdf_nint_proj, df_ranges, df_errors)
                     gpkg_bytes = export_to_gpkg(gdf_ref_proj, gdf_buffer_proj, gdf_int_proj, gdf_nint_proj, gdf_lines_proj)
 
-                    # Guardar todo en Session State
+                    # 9. Generar Mapa y Gráficos en memoria
+                    status_text.text("🗺️ Generando mapa interactivo y gráficos...")
+                    map_folium = create_folium_map(gdf_ref_proj, gdf_buffer_proj, gdf_int_proj, gdf_nint_proj, gdf_lines_proj)
+                    charts = create_plotly_charts(df_results, df_summary, df_non_intersected, df_ranges)
+
+                    # 10. Limpiar columnas pesadas de geometría para DataFrames tabulares
+                    cols_to_drop = ["geometry", "linea_conexion"]
+                    df_results_tab = df_results.drop(columns=cols_to_drop, errors="ignore")
+                    df_non_int_tab = df_non_intersected.drop(columns=cols_to_drop, errors="ignore")
+
+                    # Guardar solo objetos necesarios y livianos en Session State
                     st.session_state["analysis_executed"] = True
-                    st.session_state["df_results"] = df_results
+                    st.session_state["df_results"] = df_results_tab
                     st.session_state["df_summary"] = df_summary
-                    st.session_state["df_non_intersected"] = df_non_intersected
+                    st.session_state["df_non_intersected"] = df_non_int_tab
                     st.session_state["global_kpis"] = global_kpis
                     st.session_state["df_ranges"] = df_ranges
                     st.session_state["df_errors"] = df_errors
-                    st.session_state["gdf_ref_proj"] = gdf_ref_proj
-                    st.session_state["gdf_buffer_proj"] = gdf_buffer_proj
-                    st.session_state["gdf_int_proj"] = gdf_int_proj
-                    st.session_state["gdf_nint_proj"] = gdf_nint_proj
-                    st.session_state["gdf_lines_proj"] = gdf_lines_proj
                     st.session_state["excel_bytes"] = excel_bytes
                     st.session_state["gpkg_bytes"] = gpkg_bytes
                     st.session_state["crs_desc"] = crs_desc
-                    st.session_state["map_folium"] = None
-                    st.session_state["charts"] = None
+                    st.session_state["map_folium"] = map_folium
+                    st.session_state["charts"] = charts
+
+                    # Liberar GeoDataFrames pesados de la RAM y recolectar basura
+                    del gdf_ref_proj, gdf_buffer_proj, gdf_int_proj, gdf_nint_proj, gdf_lines_proj
+                    gc.collect()
 
                     elapsed = round(time.time() - start_time, 2)
                     status_text.success(f"✅ ¡Análisis completado exitosamente en {elapsed} segundos!")
@@ -391,18 +401,10 @@ def main():
         st.subheader("Mapa Interactivo Espacial")
         st.markdown("Visualización con capas independientes: **Referencia (Azul)**, **Buffer (Naranja)**, **Intersectados (Verde)**, **No Intersectados (Rojo)** y **Conectores de Distancia (Púrpura)**.")
         
-        if st.session_state.get("map_folium") is None:
-            with st.spinner("🗺️ Renderizando mapa espacial..."):
-                st.session_state["map_folium"] = create_folium_map(
-                    st.session_state["gdf_ref_proj"],
-                    st.session_state["gdf_buffer_proj"],
-                    st.session_state["gdf_int_proj"],
-                    st.session_state["gdf_nint_proj"],
-                    st.session_state["gdf_lines_proj"]
-                )
-        
         if st.session_state.get("map_folium") is not None:
             st_folium(st.session_state["map_folium"], width="100%", height=600, returned_objects=[])
+        else:
+            st.info("Mapa no disponible.")
 
     # -------------------------------------------------------------------------
     # TAB 3: RESULTADOS CONSOLIDADOS
