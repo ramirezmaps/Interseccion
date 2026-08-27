@@ -310,10 +310,9 @@ def main():
                     excel_bytes = export_to_excel(df_summary, df_results, gdf_int_proj, gdf_nint_proj, df_ranges, df_errors)
                     gpkg_bytes = export_to_gpkg(gdf_ref_proj, gdf_buffer_proj, gdf_int_proj, gdf_nint_proj, gdf_lines_proj)
 
-                    # 9. Generar Mapa y Gráficos en memoria
-                    status_text.text("🗺️ Generando mapa interactivo y gráficos...")
+                    # 9. Generar Mapa en memoria
+                    status_text.text("🗺️ Generando mapa interactivo...")
                     map_folium = create_folium_map(gdf_ref_proj, gdf_buffer_proj, gdf_int_proj, gdf_nint_proj, gdf_lines_proj)
-                    charts = create_plotly_charts(df_results, df_summary, df_non_intersected, df_ranges)
 
                     # 10. Limpiar columnas pesadas de geometría para DataFrames tabulares
                     cols_to_drop = ["geometry", "linea_conexion"]
@@ -332,7 +331,6 @@ def main():
                     st.session_state["gpkg_bytes"] = gpkg_bytes
                     st.session_state["crs_desc"] = crs_desc
                     st.session_state["map_folium"] = map_folium
-                    st.session_state["charts"] = charts
 
                     # Liberar GeoDataFrames pesados de la RAM y recolectar basura
                     del gdf_ref_proj, gdf_buffer_proj, gdf_int_proj, gdf_nint_proj, gdf_lines_proj
@@ -366,12 +364,11 @@ def main():
     st.caption(f"🎯 **CRS de Análisis Utilizado**: `{crs_desc}` | **Unidades**: Metros reales (m)")
 
     # Definición de pestañas
-    tab_summary, tab_map, tab_results, tab_non_int, tab_charts, tab_files, tab_errors, tab_downloads = st.tabs([
+    tab_summary, tab_map, tab_results, tab_non_int, tab_files, tab_errors, tab_downloads = st.tabs([
         "📊 Resumen",
         "🗺️ Mapa Interactivo",
         "📋 Resultados",
         "🔴 No Intersectados",
-        "📏 Distancias & Gráficos",
         "📁 Archivos",
         "⚠️ Errores",
         "📥 Descargas"
@@ -412,13 +409,26 @@ def main():
     with tab_results:
         st.subheader("Resultados Detallados por Entidad")
         if not df_results.empty:
-            cols_show = [c for c in df_results.columns if c not in ["geometry", "linea_conexion"]]
-            
             # Filtro por estado
             filter_state = st.multiselect("Filtrar por Estado:", options=["INTERSECTA", "NO INTERSECTA"], default=["INTERSECTA", "NO INTERSECTA"])
-            filtered_df = df_results[df_results["estado"].isin(filter_state)][cols_show]
+            filtered_df = df_results[df_results["estado"].isin(filter_state)]
             
-            st.dataframe(filtered_df, use_container_width=True)
+            # Personalización de columnas solicitada al filtrar exclusivamente por NO INTERSECTA
+            if set(filter_state) == {"NO INTERSECTA"}:
+                cols_target = ["archivo", "subcarpeta", "id_entidad", "id_referencia_mas_cercana", "distancia_m"]
+                cols_present = [c for c in cols_target if c in filtered_df.columns]
+                filtered_df_display = filtered_df[cols_present].rename(columns={
+                    "archivo": "Capa / Archivo",
+                    "subcarpeta": "Subcarpeta",
+                    "id_entidad": "ID Elemento Analizado",
+                    "id_referencia_mas_cercana": "Elemento Referencia Más Cercano",
+                    "distancia_m": "Distancia (m)"
+                })
+            else:
+                cols_show = [c for c in filtered_df.columns if c not in ["geometry", "linea_conexion"]]
+                filtered_df_display = filtered_df[cols_show]
+            
+            st.dataframe(filtered_df_display, use_container_width=True)
 
     # -------------------------------------------------------------------------
     # TAB 4: ELEMENTOS NO INTERSECTADOS
@@ -445,32 +455,6 @@ def main():
                 st.success("🎉 Todos los archivos y entidades intersectan el buffer. No hay elementos fuera.")
         else:
             st.info("No se registraron datos de análisis.")
-
-    # -------------------------------------------------------------------------
-    # TAB 5: DISTANCIAS Y GRÁFICOS INTERACTIVOS
-    # -------------------------------------------------------------------------
-    with tab_charts:
-        st.subheader("Análisis Gráfico y Esquema de Distancias")
-        if st.session_state.get("charts") is None:
-            st.session_state["charts"] = create_plotly_charts(df_results, df_summary, df_non_intersected, df_ranges)
-            
-        charts = st.session_state["charts"]
-        
-        c1, c2 = st.columns(2)
-        with c1:
-            if "fig_donut" in charts:
-                st.plotly_chart(charts["fig_donut"], use_container_width=True)
-        with c2:
-            if "fig_ranges" in charts:
-                st.plotly_chart(charts["fig_ranges"], use_container_width=True)
-
-        c3, c4 = st.columns(2)
-        with c3:
-            if "fig_hist" in charts:
-                st.plotly_chart(charts["fig_hist"], use_container_width=True)
-        with c4:
-            if "fig_bar_files" in charts:
-                st.plotly_chart(charts["fig_bar_files"], use_container_width=True)
 
     # -------------------------------------------------------------------------
     # TAB 6: ARCHIVOS ESCANEADOS
