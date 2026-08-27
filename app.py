@@ -244,18 +244,22 @@ def main():
                     error_logs = []
 
                     total_shps = len(scanned_shps)
-                    int_records_list = []
-                    nint_records_list = []
+                    # Límite de entidades por capa para evitar throttling en Streamlit Cloud
+                    MAX_ENTITIES_PER_LAYER = 5000
 
                     for idx_file, shp_info in enumerate(scanned_shps):
                         progress_val = int(((idx_file + 1) / total_shps) * 100)
                         progress_bar.progress(progress_val)
-                        status_text.text(f"⚡ Procesando archivo {idx_file + 1} de {total_shps}: {shp_info['archivo']}")
+                        status_text.text(f"⚡ Procesando {idx_file + 1}/{total_shps}: {shp_info['archivo']}")
 
                         try:
                             gdf_layer_raw = read_shapefile(shp_info["ruta_absoluta"])
                             if gdf_layer_raw is None or len(gdf_layer_raw) == 0:
                                 continue
+
+                            # Limitar entidades para proteger CPU en plataforma cloud
+                            if len(gdf_layer_raw) > MAX_ENTITIES_PER_LAYER:
+                                gdf_layer_raw = gdf_layer_raw.iloc[:MAX_ENTITIES_PER_LAYER].copy()
 
                             # Validar/Reparar geometrías
                             gdf_layer_clean, _ = clean_and_validate_geometries(gdf_layer_raw)
@@ -265,7 +269,7 @@ def main():
                             # Reproyectar al CRS métrico de análisis
                             gdf_layer_proj = reproject_gdf(gdf_layer_clean, target_crs)
 
-                            # Ejecutar proximidad entidad por entidad
+                            # Ejecutar análisis vectorizado
                             results_batch, lines_batch = analyze_proximity_batch(
                                 gdf_layer_proj,
                                 gdf_ref_proj,
