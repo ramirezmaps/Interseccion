@@ -422,13 +422,27 @@ def main():
     # TAB 4: ELEMENTOS NO INTERSECTADOS
     # -------------------------------------------------------------------------
     with tab_non_int:
-        st.subheader("Elementos fuera del Buffer (Ordenados por Distancia Ascendente)")
-        st.markdown("Identificación rápida del elemento de referencia más cercano y distancia exacta en metros.")
-        if not df_non_intersected.empty:
-            cols_show = [c for c in df_non_intersected.columns if c not in ["geometry", "linea_conexion"]]
-            st.dataframe(df_non_intersected[cols_show], use_container_width=True)
+        st.subheader("Archivos y Capas fuera del Buffer")
+        st.markdown("Resumen compilado por archivo Shapefile de los elementos que presentan entidades fuera del buffer de referencia.")
+        
+        if not df_summary.empty:
+            df_non_int_files = df_summary[df_summary["no_intersectan"] > 0].copy()
+            if not df_non_int_files.empty:
+                df_non_int_files.sort_values(by="distancia_min_m", ascending=True, inplace=True)
+                cols_files = [
+                    "archivo", "subcarpeta", "no_intersectan", "total_entidades",
+                    "porcentaje_no_intersectan", "distancia_min_m", "distancia_promedio_m", "distancia_max_m"
+                ]
+                st.dataframe(df_non_int_files[cols_files], use_container_width=True)
+                
+                with st.expander("🔍 Ver desglose detallado de entidades individuales por ID"):
+                    if not df_non_intersected.empty:
+                        cols_show = [c for c in df_non_intersected.columns if c not in ["geometry", "linea_conexion"]]
+                        st.dataframe(df_non_intersected[cols_show], use_container_width=True)
+            else:
+                st.success("🎉 Todos los archivos y entidades intersectan el buffer. No hay elementos fuera.")
         else:
-            st.success("🎉 Todos los elementos intersectan el buffer. No hay elementos fuera.")
+            st.info("No se registraron datos de análisis.")
 
     # -------------------------------------------------------------------------
     # TAB 5: DISTANCIAS Y GRÁFICOS INTERACTIVOS
