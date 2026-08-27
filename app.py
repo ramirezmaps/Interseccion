@@ -216,8 +216,17 @@ def main():
                     # Reproyectar referencia a CRS proyectado métrico
                     gdf_ref_proj = reproject_gdf(gdf_ref_clean, target_crs)
 
-                    # 3. Generar Buffer e Índice Espacial STRtree
+                    # 3. Simplificar referencia si es polígono complejo (acelera STRtree nearest y buffer)
                     status_text.text("🌐 Generando buffer métrico e índice espacial STRtree...")
+                    ref_geom_type = gdf_ref_proj.geometry.geom_type.iloc[0] if len(gdf_ref_proj) > 0 else "Unknown"
+                    if ref_geom_type in ("Polygon", "MultiPolygon"):
+                        # Simplificación leve: 0.5m imperceptible pero elimina miles de vértices redundantes
+                        try:
+                            gdf_ref_proj = gdf_ref_proj.copy()
+                            gdf_ref_proj["geometry"] = gdf_ref_proj.geometry.simplify(0.5, preserve_topology=True)
+                        except Exception:
+                            pass
+
                     buffer_dissolved, gdf_buffer_proj = create_buffer_layer(gdf_ref_proj, buffer_meters)
                     strtree_ref = build_spatial_index(gdf_ref_proj)
 
