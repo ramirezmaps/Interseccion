@@ -19,12 +19,13 @@ def create_buffer_layer(gdf_ref: gpd.GeoDataFrame, buffer_distance_m: float) -> 
     if buffer_distance_m < 0:
         raise ValueError("La distancia de buffer debe ser mayor o igual a 0 metros.")
         
-    # Buffer individual conservando atributos
-    gdf_buffer = gdf_ref.copy()
-    gdf_buffer['geometry'] = gdf_buffer.geometry.buffer(buffer_distance_m)
-    gdf_buffer['distancia_buffer_m'] = buffer_distance_m
-    
-    # Buffer disuelto para acelerar evaluador espacial binario (intersects)
+    # Buffer disuelto/unificado único (merge de todas las entidades de referencia)
     dissolved_geom = gdf_ref.geometry.unary_union.buffer(buffer_distance_m)
+    
+    # GeoDataFrame con la entidad de buffer unificado disuelto
+    gdf_buffer = gpd.GeoDataFrame(
+        [{"id_buffer": 1, "distancia_buffer_m": buffer_distance_m, "geometry": dissolved_geom}],
+        crs=gdf_ref.crs
+    )
     
     return dissolved_geom, gdf_buffer
