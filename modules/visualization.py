@@ -9,56 +9,82 @@ import plotly.express as px
 import plotly.graph_objects as go
 from typing import Optional, Dict, Any
 
-def create_folium_map(
-    gdf_ref: gpd.GeoDataFrame,
-    gdf_buffer: gpd.GeoDataFrame,
-    gdf_intersected: Optional[gpd.GeoDataFrame] = None,
-    gdf_non_intersected: Optional[gpd.GeoDataFrame] = None,
-    gdf_lines: Optional[gpd.GeoDataFrame] = None
-) -> folium.Map:
-    """
-    Crea un mapa interactivo de Folium con capas independientes, popups y control de capas.
-    """
-    # Helper para eliminar columnas no serializables en JSON y optimizar payload de Folium
-    def _clean_gdf(df: Optional[gpd.GeoDataFrame], max_features: int = 3000) -> Optional[gpd.GeoDataFrame]:
-        if df is None or len(df) == 0:
-            return None
-        df_c = df.copy()
+import json
+
+def convert_gdf_to_geojson_str(gdf: Optional[gpd.GeoDataFrame], max_features: int = 2000) -> Optional[str]:
+    """Convierte un GeoDataFrame en un string GeoJSON ligero y 100% serializable para session_state."""
+    if gdf is None or len(gdf) == 0:
+        return None
+    try:
+        df_c = gdf.copy()
         if "linea_conexion" in df_c.columns:
             df_c = df_c.drop(columns=["linea_conexion"])
-        
-        # Limitar número de entidades para evitar saturación de memoria en navegador/servidor
         if len(df_c) > max_features:
             df_c = df_c.iloc[:max_features]
-            
         df_4326 = df_c.to_crs("EPSG:4326")
-        
-        # Simplificación de geometrías complejas para renderizado ágil en la web
         try:
             df_4326["geometry"] = df_4326.geometry.simplify(0.00005, preserve_topology=True)
         except Exception:
             pass
-            
-        return df_4326
+        return df_4326.to_json()
+    except Exception:
+        return None
 
-    # 1. Reproyectar a WGS84 (EPSG:4326) para Folium
-    gdf_ref_4326 = _clean_gdf(gdf_ref, max_features=1000)
-    gdf_buf_4326 = _clean_gdf(gdf_buffer, max_features=500)
-    gdf_int_4326 = _clean_gdf(gdf_intersected, max_features=3000)
-    gdf_nint_4326 = _clean_gdf(gdf_non_intersected, max_features=3000)
-    gdf_lines_4326 = _clean_gdf(gdf_lines, max_features=3000)
+def create_folium_map(
+    gdf_ref: Any = None,
+    gdf_buffer: Any = None,
+    gdf_intersected: Any = None,
+    gdf_non_intersected: Any = None,
+    gdf_lines: Any = None
+) -> folium.Map:
+    """
+    Crea un mapa interactivo de Folium recibiendo GeoDataFrames o strings GeoJSON serializados.
+    """
+    def _to_geojson_dict(data: Any) -> Optional[Dict[str, Any]]:
+        if data is None:
+            return None
+        if isinstance(data, str):
+            try:
+                return json.loads(data)
+            except Exception:
+                return None
+        if isinstance(data, gpd.GeoDataFrame) and len(data) > 0:
+            json_str = convert_gdf_to_geojson_str(data)
+            return json.loads(json_str) if json_str else None
+        return None
 
-    # Calcular centro del mapa
-    if gdf_buf_4326 is not None:
-        bounds = gdf_buf_4326.total_bounds
-        center_lat = (bounds[1] + bounds[3]) / 2.0
-        center_lon = (bounds[0] + bounds[2]) / 2.0
-    elif gdf_ref_4326 is not None:
-        bounds = gdf_ref_4326.total_bounds
-        center_lat = (bounds[1] + bounds[3]) / 2.0
-        center_lon = (bounds[0] + bounds[2]) / 2.0
-    else:
-        center_lat, center_lon = -33.45, -70.66 # Santiago de Chile por defecto
+    geo_ref = _to_geojson_dict(gdf_ref)
+    geo_buf = _to_geojson_dict(gdf_buffer)
+    geo_int = _to_geojson_dict(gdf_intersected)
+    geo_nint = _to_geojson_dict(gdf_non_intersected)
+    geo_lines = _to_geojson_dict(gdf_lines)
+
+    # Calcular centro del mapa a partir de bounding box
+    center_lat, center_lon = -33.45, -70.66
+    for gdict in [geo_buf, geo_ref, geo_int, geo_nint]:
+        if gdict and "features" in gdict and gdict["features"]:
+            try:
+                coords = []
+                for feat in gdict["features"][:50]:
+                    g = feat.get("geometry", {})
+                    g_type = g.get("type", "")
+                    g_coords = g.get("coordinates", [])
+                    if g_type == "Point":
+                        coords.append(g_coords)
+                    elif g_type in ["LineString", "MultiPoint"]:
+                        coords.extend(g_coords)
+                    elif g_type in ["Polygon", "MultiLineString"]:
+                        for poly in g_coords:
+                            coords.extend(poly)
+                if coords:
+                    lons = [c[0] for c in coords if isinstance(c, (list, tuple)) and len(c) >= 2]
+                    lats = [c[1] for c in coords if isinstance(c, (list, tuple)) and len(c) >= 2]
+                    if lons and lats:
+                        center_lon = sum(lons) / len(lons)
+                        center_lat = sum(lats) / len(lats)
+                        break
+            except Exception:
+                pass
 
     # Inicializar mapa
     m = folium.Map(location=[center_lat, center_lon], zoom_start=12, tiles=None)
@@ -72,26 +98,25 @@ def create_folium_map(
         name="Satélite (Esri)"
     ).add_to(m)
 
-    # Capa 1: Shapefile de Referencia
-    if gdf_ref_4326 is not None:
+    # Capa 1: Referencia
+    if geo_ref:
         fg_ref = folium.FeatureGroup(name="1. SHP Referencia", show=True)
         folium.GeoJson(
-            gdf_ref_4326,
+            geo_ref,
             style_function=lambda x: {
                 "color": "#1f77b4",
                 "weight": 3,
                 "fillColor": "#1f77b4",
                 "fillOpacity": 0.4
-            },
-            tooltip=folium.GeoJsonTooltip(fields=[c for c in gdf_ref_4326.columns if c != "geometry"][:5])
+            }
         ).add_to(fg_ref)
         fg_ref.add_to(m)
 
     # Capa 2: Buffer
-    if gdf_buf_4326 is not None:
+    if geo_buf:
         fg_buf = folium.FeatureGroup(name="2. Buffer", show=True)
         folium.GeoJson(
-            gdf_buf_4326,
+            geo_buf,
             style_function=lambda x: {
                 "color": "#ff7f0e",
                 "weight": 2,
@@ -103,11 +128,11 @@ def create_folium_map(
         ).add_to(fg_buf)
         fg_buf.add_to(m)
 
-    # Capa 3: Elementos Intersectados (Verde)
-    if gdf_int_4326 is not None:
+    # Capa 3: Intersectados (Verde)
+    if geo_int:
         fg_int = folium.FeatureGroup(name="3. Intersectados (Verde)", show=True)
         folium.GeoJson(
-            gdf_int_4326,
+            geo_int,
             style_function=lambda x: {
                 "color": "#2ca02c",
                 "weight": 3,
@@ -121,11 +146,11 @@ def create_folium_map(
         ).add_to(fg_int)
         fg_int.add_to(m)
 
-    # Capa 4: Elementos No Intersectados (Rojo)
-    if gdf_nint_4326 is not None:
+    # Capa 4: No Intersectados (Rojo)
+    if geo_nint:
         fg_nint = folium.FeatureGroup(name="4. No Intersectados (Rojo)", show=True)
         folium.GeoJson(
-            gdf_nint_4326,
+            geo_nint,
             style_function=lambda x: {
                 "color": "#d62728",
                 "weight": 3,
@@ -139,11 +164,11 @@ def create_folium_map(
         ).add_to(fg_nint)
         fg_nint.add_to(m)
 
-    # Capa 5: Líneas de Distancia y Conexión
-    if gdf_lines_4326 is not None:
+    # Capa 5: Conectores
+    if geo_lines:
         fg_lines = folium.FeatureGroup(name="5. Líneas de Conexión y Distancia", show=True)
         folium.GeoJson(
-            gdf_lines_4326,
+            geo_lines,
             style_function=lambda x: {
                 "color": "#9467bd",
                 "weight": 2,
@@ -157,7 +182,7 @@ def create_folium_map(
         ).add_to(fg_lines)
         fg_lines.add_to(m)
 
-    # Agregar plugins y controles
+    # Controles
     folium.LayerControl(collapsed=False).add_to(m)
     MeasureControl(position="topright", primary_length_unit="meters").add_to(m)
     Fullscreen().add_to(m)

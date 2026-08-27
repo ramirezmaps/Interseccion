@@ -37,7 +37,7 @@ from modules.reporting import (
 )
 from modules.visualization import (
     create_folium_map,
-    create_plotly_charts
+    convert_gdf_to_geojson_str
 )
 from modules.utils import format_meters, format_percentage, log_error
 
@@ -310,16 +310,20 @@ def main():
                     excel_bytes = export_to_excel(df_summary, df_results, gdf_int_proj, gdf_nint_proj, df_ranges, df_errors)
                     gpkg_bytes = export_to_gpkg(gdf_ref_proj, gdf_buffer_proj, gdf_int_proj, gdf_nint_proj, gdf_lines_proj)
 
-                    # 9. Generar Mapa en memoria
-                    status_text.text("🗺️ Generando mapa interactivo...")
-                    map_folium = create_folium_map(gdf_ref_proj, gdf_buffer_proj, gdf_int_proj, gdf_nint_proj, gdf_lines_proj)
+                    # 9. Convertir capas espaciales a strings GeoJSON livianos y 100% serializables para session_state
+                    status_text.text("🌐 Convirtiendo capas a GeoJSON ligero para visualización web...")
+                    geo_ref_str = convert_gdf_to_geojson_str(gdf_ref_proj, 1000)
+                    geo_buf_str = convert_gdf_to_geojson_str(gdf_buffer_proj, 500)
+                    geo_int_str = convert_gdf_to_geojson_str(gdf_int_proj, 2000)
+                    geo_nint_str = convert_gdf_to_geojson_str(gdf_nint_proj, 2000)
+                    geo_lines_str = convert_gdf_to_geojson_str(gdf_lines_proj, 2000)
 
                     # 10. Limpiar columnas pesadas de geometría para DataFrames tabulares
                     cols_to_drop = ["geometry", "linea_conexion"]
                     df_results_tab = df_results.drop(columns=cols_to_drop, errors="ignore")
                     df_non_int_tab = df_non_intersected.drop(columns=cols_to_drop, errors="ignore")
 
-                    # Guardar solo objetos necesarios y livianos en Session State
+                    # Guardar solo objetos serializables en Session State
                     st.session_state["analysis_executed"] = True
                     st.session_state["df_results"] = df_results_tab
                     st.session_state["df_summary"] = df_summary
@@ -330,7 +334,11 @@ def main():
                     st.session_state["excel_bytes"] = excel_bytes
                     st.session_state["gpkg_bytes"] = gpkg_bytes
                     st.session_state["crs_desc"] = crs_desc
-                    st.session_state["map_folium"] = map_folium
+                    st.session_state["geo_ref_str"] = geo_ref_str
+                    st.session_state["geo_buf_str"] = geo_buf_str
+                    st.session_state["geo_int_str"] = geo_int_str
+                    st.session_state["geo_nint_str"] = geo_nint_str
+                    st.session_state["geo_lines_str"] = geo_lines_str
 
                     # Liberar GeoDataFrames pesados de la RAM y recolectar basura
                     del gdf_ref_proj, gdf_buffer_proj, gdf_int_proj, gdf_nint_proj, gdf_lines_proj
@@ -398,8 +406,21 @@ def main():
         st.subheader("Mapa Interactivo Espacial")
         st.markdown("Visualización con capas independientes: **Referencia (Azul)**, **Buffer (Naranja)**, **Intersectados (Verde)**, **No Intersectados (Rojo)** y **Conectores de Distancia (Púrpura)**.")
         
-        if st.session_state.get("map_folium") is not None:
-            st_folium(st.session_state["map_folium"], width="100%", height=600, returned_objects=[])
+        has_data = any([
+            st.session_state.get("geo_ref_str"),
+            st.session_state.get("geo_buf_str"),
+            st.session_state.get("geo_int_str"),
+            st.session_state.get("geo_nint_str")
+        ])
+        if has_data:
+            map_folium = create_folium_map(
+                st.session_state.get("geo_ref_str"),
+                st.session_state.get("geo_buf_str"),
+                st.session_state.get("geo_int_str"),
+                st.session_state.get("geo_nint_str"),
+                st.session_state.get("geo_lines_str")
+            )
+            st_folium(map_folium, width="100%", height=600, returned_objects=[])
         else:
             st.info("Mapa no disponible.")
 
