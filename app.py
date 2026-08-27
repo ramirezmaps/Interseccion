@@ -161,6 +161,14 @@ def main():
         help="Distancia de buffer métrico a aplicar alrededor del Shapefile de referencia."
     )
 
+    if buffer_meters == 0.0:
+        st.sidebar.warning(
+            "⚠️ **Buffer = 0m:** Solo se detectarán intersecciones exactas.\n"
+            "- **Polígono de referencia**: Funciona correctamente (intersecta = dentro del polígono).\n"
+            "- **Línea de referencia**: Solo elementos que crucen exactamente la línea.\n"
+            "- **Punto de referencia**: Prácticamente nada intersectará \u2014 se recomienda usar al menos 1m."
+        )
+
     # Opción de CRS
     override_crs = st.sidebar.checkbox("Configurar EPSG manualmente", value=False)
     manual_epsg = None
@@ -204,6 +212,20 @@ def main():
                     if len(gdf_ref_clean) == 0:
                         st.error("❌ El Shapefile de referencia no contiene geometrías válidas.")
                         return
+
+                    # Advertencia contextual de buffer=0 según tipo de geometría real
+                    if buffer_meters == 0.0:
+                        first_geom_type = gdf_ref_clean.geometry.geom_type.dropna().iloc[0] if len(gdf_ref_clean) > 0 else "Unknown"
+                        if first_geom_type in ("Point", "MultiPoint"):
+                            st.warning(
+                                "⚠️ **Buffer = 0m con referencia de PUNTOS**: Prácticamente ninguna entidad intersectará. "
+                                "Se recomienda usar al menos 1m de buffer."
+                            )
+                        elif first_geom_type in ("LineString", "MultiLineString"):
+                            st.warning(
+                                "⚠️ **Buffer = 0m con referencia de LÍNEAS**: Solo elementos que crucen exactamente la línea "
+                                "serán detectados como intersectados. Considere usar al menos 1m."
+                            )
 
                     # 2. Determinar CRS proyectado métrico
                     if manual_epsg:
