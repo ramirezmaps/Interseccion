@@ -1,0 +1,25 @@
+# Entorno Virtual Python
+venv/
+env/
+ENV/
+
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Archivos de salida y datos temporales
+datos_prueba/
+output/
+*.gpkg
+*.xlsx
+*.csv
+*.zip
+
+# Streamlit config local
+.streamlit/secrets.toml
+
+# OS Files
+.DS_Store
+Thumbs.db
