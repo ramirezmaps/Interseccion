@@ -116,6 +116,31 @@ def export_to_excel(
             
     return output.getvalue()
 
+def _export_layer_by_geom(gdf: gpd.GeoDataFrame, base_layer: str, tmp_path: str):
+    """
+    Exporta un GeoDataFrame separando sus geometrías por tipo en distintas capas.
+    Esto soluciona el problema de visibilidad en QGIS cuando hay capas con geometrías mixtas.
+    """
+    if gdf is None or len(gdf) == 0:
+        return
+        
+    gdf_clean = gdf.drop(columns=["linea_conexion"], errors="ignore")
+    
+    puntos = gdf_clean[gdf_clean.geometry.type.isin(["Point", "MultiPoint"])]
+    lineas = gdf_clean[gdf_clean.geometry.type.isin(["LineString", "MultiLineString"])]
+    poligonos = gdf_clean[gdf_clean.geometry.type.isin(["Polygon", "MultiPolygon"])]
+    
+    if not puntos.empty:
+        puntos.to_file(tmp_path, layer=f"{base_layer}_puntos", driver="GPKG")
+    if not lineas.empty:
+        lineas.to_file(tmp_path, layer=f"{base_layer}_lineas", driver="GPKG")
+    if not poligonos.empty:
+        poligonos.to_file(tmp_path, layer=f"{base_layer}_poligonos", driver="GPKG")
+        
+    otros = gdf_clean[~gdf_clean.geometry.type.isin(["Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon"])]
+    if not otros.empty:
+        otros.to_file(tmp_path, layer=f"{base_layer}_otros", driver="GPKG")
+
 def export_to_gpkg(
     gdf_ref: gpd.GeoDataFrame,
     gdf_buffer: gpd.GeoDataFrame,
@@ -123,7 +148,7 @@ def export_to_gpkg(
     gdf_non_intersected: Optional[gpd.GeoDataFrame],
     gdf_lines: Optional[gpd.GeoDataFrame]
 ) -> bytes:
-    """Exporta las capas espaciales resultantes a un único GeoPackage (.gpkg)."""
+    """Exporta las capas espaciales resultantes a un único GeoPackage (.gpkg), separando por tipo de geometría."""
     with tempfile.NamedTemporaryFile(suffix=".gpkg", delete=False) as tmp_gpkg:
         tmp_path = tmp_gpkg.name
         
@@ -132,13 +157,11 @@ def export_to_gpkg(
             gdf_ref.to_file(tmp_path, layer="referencia", driver="GPKG")
         if gdf_buffer is not None and len(gdf_buffer) > 0:
             gdf_buffer.to_file(tmp_path, layer="buffer", driver="GPKG")
-        if gdf_intersected is not None and len(gdf_intersected) > 0:
-            # Eliminar columnas con objetos no serializables si existen
-            gdf_clean = gdf_intersected.drop(columns=["linea_conexion"], errors="ignore")
-            gdf_clean.to_file(tmp_path, layer="intersectados", driver="GPKG")
-        if gdf_non_intersected is not None and len(gdf_non_intersected) > 0:
-            gdf_clean = gdf_non_intersected.drop(columns=["linea_conexion"], errors="ignore")
-            gdf_clean.to_file(tmp_path, layer="no_intersectados", driver="GPKG")
+            
+        # Exportar capas de intersección divididas por tipo de geometría
+        _export_layer_by_geom(gdf_intersected, "intersectados", tmp_path)
+        _export_layer_by_geom(gdf_non_intersected, "no_intersectados", tmp_path)
+        
         if gdf_lines is not None and len(gdf_lines) > 0:
             gdf_lines.to_file(tmp_path, layer="lineas_distancia", driver="GPKG")
             
